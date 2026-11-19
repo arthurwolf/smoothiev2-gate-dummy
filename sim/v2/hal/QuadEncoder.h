@@ -1,0 +1,7 @@
+#pragma once
+#include <cstdint>
+bool setup_quadrature_encoder(bool pullup = true);
+uint32_t read_quadrature_encoder();
+uint32_t get_quadrature_encoder_max_count();
+uint32_t get_quadrature_encoder_div();
+bool sim_v2_encoder_advance(int32_t counts);

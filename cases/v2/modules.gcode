@@ -1,0 +1,7 @@
+;@sim adc 3900
+M104 S200
+G1 X1 F600
+;@sim wait 1000
+M105
+M104 S0
+G1 X0

@@ -1,0 +1,52 @@
+# Experimental SmoothieV2 host executable.
+SOURCE ?= ../smoothieware-microros/src/SmoothieV2/Firmware
+BUILD ?= build-v2
+SOURCE_KEY := $(shell python3 tools/v2_source_key.py $(SOURCE))
+ifeq ($(strip $(SOURCE_KEY)),)
+$(error Could not fingerprint the SmoothieV2 source)
+endif
+V2 := $(BUILD)/stages/$(SOURCE_KEY)
+CXX ?= g++
+BOARD ?= PRIME
+ifneq ($(words $(BOARD)),1)
+$(error Select exactly one SmoothieV2 board)
+endif
+ifeq ($(filter PRIME NUCLEO DEVEBOX,$(BOARD)),)
+$(error Unsupported SmoothieV2 board: $(BOARD))
+endif
+SHARED := ../lib-smoothie
+INCLUDES := -I$(SHARED)/include -Isim -Isim/v2/rtos -Isim/v2/hal -Isim/v2 -Ishim -I$(V2)/src -I$(V2)/src/libs -I$(V2)/src/robot -I$(V2)/src/robot/arm_solutions -I$(V2)/src/modules/tools/temperaturecontrol -I$(V2)/src/modules/tools/temperatureswitch -I$(V2)/src/modules/tools/switch -I$(V2)/src/modules/tools/laser -I$(V2)/src/modules/tools/extruder -I$(V2)/src/modules/tools/endstops -I$(V2)/src/modules/tools/zprobe -I$(V2)/src/modules/utils/killbutton -I$(V2)/Hal/src
+INCLUDES += -I$(V2)/src/modules/tools/filamentdetector -I$(V2)/src/modules/utils/player -I$(V2)/src/modules/utils/currentcontrol -I$(V2)/src/robot/drivers
+INCLUDES += -I$(V2)/src/modules/utils/drillcycles -I$(V2)/src/modules/utils/buttonbox
+INCLUDES += -I$(V2)/src/modules/utils/display/max7219 -I$(V2)/src/modules/utils/dro
+INCLUDES += -I$(V2)/src/modules/utils/mpg
+INCLUDES += -I$(V2)/src/modules/tools/lathe
+INCLUDES += -I$(V2)/src/modules/tools/lathe/els -I$(V2)/src/modules/utils/display/tm1638
+INCLUDES += -I$(V2)/src/modules/utils/display/st7920
+CXXFLAGS := -std=gnu++17 -O1 -g -ffunction-sections -fdata-sections -fpermissive -Dinfinityf=__builtin_inff -DSIM_V2_ALLOC_TRACE -DSIM_V2_COOPERATIVE_TASKS -DDRIVER_TMC -w -DBOARD_$(BOARD) $(INCLUDES)
+CXXFLAGS += $(if $(filter 1,$(COVERAGE)),--coverage)
+CORE := $(addprefix $(V2)/src/,ConfigReader.cpp Module.cpp Dispatcher.cpp GCode.cpp GCodeProcessor.cpp libs/StringUtils.cpp libs/Vector3.cpp libs/nist_float.cpp libs/OutputStream.cpp libs/xformatc.c robot/Block.cpp robot/Planner.cpp robot/Conveyor.cpp robot/StepTicker.cpp robot/StepperMotor.cpp robot/Robot.cpp)
+MECHANICS := $(wildcard $(SHARED)/src/models/*.cpp) $(SHARED)/src/v2/mechanical_config.cpp $(SHARED)/src/v2/model_ini.cpp $(SHARED)/src/v2/thermal_config.cpp $(SHARED)/src/v2/machine_config.cpp $(SHARED)/src/v2/thermal_runtime.cpp $(SHARED)/src/v2/mechanical_runtime.cpp
+SOLUTIONS := $(addprefix $(V2)/src/robot/arm_solutions/,CartesianSolution.cpp CoreXZSolution.cpp HBotSolution.cpp LinearDeltaSolution.cpp MorganSCARASolution.cpp RotaryDeltaSolution.cpp)
+MODULES := $(addprefix $(V2)/src/,libs/FastTicker.cpp libs/SlowTicker.cpp libs/SigmaDeltaPwm.cpp modules/tools/temperaturecontrol/TemperatureControl.cpp modules/tools/temperaturecontrol/Thermistor.cpp modules/tools/temperaturecontrol/max31855.cpp modules/tools/temperaturecontrol/PID_Autotuner.cpp modules/tools/temperatureswitch/TemperatureSwitch.cpp modules/tools/switch/Switch.cpp modules/tools/laser/Laser.cpp modules/tools/extruder/Extruder.cpp modules/tools/endstops/Endstops.cpp modules/tools/zprobe/ZProbe.cpp modules/tools/zprobe/ThreePointStrategy.cpp modules/tools/zprobe/DeltaCalibrationStrategy.cpp modules/tools/zprobe/DeltaGridStrategy.cpp modules/tools/zprobe/CartGridStrategy.cpp modules/tools/zprobe/Plane3D.cpp)
+MODULES += $(V2)/src/modules/utils/killbutton/KillButton.cpp
+MODULES += $(V2)/src/modules/tools/filamentdetector/FilamentDetector.cpp $(V2)/src/modules/utils/player/Player.cpp
+MODULES += $(V2)/src/modules/utils/currentcontrol/CurrentControl.cpp $(V2)/src/robot/drivers/TMC2590.cpp $(V2)/src/robot/drivers/TMC26X.cpp
+MODULES += $(V2)/src/modules/utils/drillcycles/drillingcycles.cpp
+MODULES += $(V2)/src/modules/utils/buttonbox/buttonbox.cpp
+MODULES += $(V2)/src/modules/utils/display/max7219/max7219.cpp $(V2)/src/modules/utils/dro/dro.cpp
+MODULES += $(V2)/src/modules/utils/mpg/mpg.cpp $(V2)/src/libs/RotaryEncoder.cpp
+MODULES += $(V2)/src/modules/tools/lathe/Lathe.cpp
+MODULES += $(V2)/src/modules/tools/lathe/els/els.cpp $(V2)/src/modules/utils/display/tm1638/TM1638.cpp
+MODULES += $(V2)/src/modules/utils/display/st7920/ST7920.cpp
+
+all: $(BUILD)/smoothie-sim-v2
+$(V2)/.staged:
+	mkdir -p $(BUILD)/stages
+	python3 tools/stage_v2.py $(SOURCE) $(V2)
+	python3 tools/stage_v2_patch.py $(V2)/src
+	touch $@
+.PHONY: force
+force:
+$(BUILD)/smoothie-sim-v2: $(V2)/.staged force $(wildcard sim/v2/*.cpp sim/v2/*.h sim/v2/hal/*.h sim/v2/rtos/*.h) sim/sim_output.cpp sim/sim_output.h sim/sim_runtime.h
+	$(CXX) $(CXXFLAGS) sim/v2/sim_v2_main.cpp sim/v2/v2_task.cpp sim/v2/v2_player_files.cpp sim/v2/v2_max7219.cpp sim/v2/v2_tm1638.cpp sim/v2/v2_st7920.cpp sim/v2/v2_quadencoder.cpp sim/v2/v2_step_timer.cpp sim/v2/v2_scheduler.cpp sim/v2/tmr_setup.cpp sim/v2/v2_freertos_timers.cpp sim/v2/sim_v2_capture.cpp sim/sim_output.cpp sim/sim_alloc.cpp $(CORE) $(SOLUTIONS) $(MODULES) $(MECHANICS) -Wl,--gc-sections,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free -o $@
