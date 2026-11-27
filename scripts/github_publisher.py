@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ci_artifact
@@ -25,6 +26,9 @@ import sandbox_process
 
 def emit(operation, **fields):
     print(json.dumps({'type':'progress','operation':operation,**fields}),flush=True)
+
+
+READBACK_DELAYS = (0, 2, 5, 10)
 
 
 class ApiPublisher(github_preflight.ApiReader):
@@ -76,7 +80,7 @@ def _verified_write(api, method, route, payload, journal, kind, policy, binding,
         identifier=response['id']
         read_route=prefix+('/check-runs/' if kind=='check' else '/issues/comments/')+str(identifier)
         if method=='PATCH' and read_route!=route:raise ValueError('comment response changed identifier')
-        for observed in (response,api(read_route)):
+        def verify(observed):
             if not isinstance(observed,dict) or type(observed.get('id')) is not int or observed['id']!=identifier:
                 raise ValueError('publication readback has wrong identifier')
             if kind=='check':
@@ -95,6 +99,16 @@ def _verified_write(api, method, route, payload, journal, kind, policy, binding,
                         or observed.get('body')!=payload['body']
                         or observed.get('issue_url')!='https://api.github.com/'+prefix+'/issues/'+str(binding['workflow']['pr'])):
                     raise ValueError('comment readback differs from owned PR report')
+        verify(response)
+        # Reads are safe to repeat (GitHub can lag just after a write); the write itself is never retried.
+        for delay in READBACK_DELAYS:
+            time.sleep(delay)
+            try:
+                verify(api(read_route));break
+            except ValueError as error:
+                print(json.dumps({'type':'warning','operation':'publication readback','route':read_route,
+                                  'message':str(error)[:300]}),flush=True)
+                if delay==READBACK_DELAYS[-1]:raise
         return {'status':'published','receipt':{'id':identifier,'route':read_route,'head':binding['head']}}
 
     return github_journal.run_once(journal,intent,operation)
