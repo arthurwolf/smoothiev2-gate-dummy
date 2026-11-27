@@ -392,6 +392,17 @@ def validate(raw_findings, files, pr_text, allow_context):
     return kept, dropped
 
 
+def one_per_line(findings):
+    """Both review prompts often report the same line: keep its most severe, then most confident, finding."""
+    best = {}
+    for finding in findings:
+        key = (finding["file"], finding["line"])
+        rank = ({"high": 2, "medium": 1}.get(finding["severity"], 0), finding["confidence"])
+        if key not in best or rank > best[key][0]:
+            best[key] = (rank, finding)
+    return [finding for _, finding in best.values()]
+
+
 def safe_text(text):
     """Model and diff text goes into a PR comment: no HTML, no mentions, no autolinks, no code fence breaks."""
     text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("`", "'")
@@ -509,6 +520,7 @@ def main(argv=None):
     # a pattern hit and the model flagging the same line are one finding: keep the scan's (it carries the rule text)
     scan_keys = {(h["file"], h["line"]) for h in scan_hits}
     model_findings = [f for f in model_findings if (f["file"], f["line"]) not in scan_keys]
+    model_findings = one_per_line(model_findings)
     sure = scan_hits + [f for f in model_findings if f["confidence"] >= MIN_CONFIDENCE]
     unsure = [f for f in model_findings if f["confidence"] < MIN_CONFIDENCE]
     blocking = [f for f in scan_hits if f["blocking"]]

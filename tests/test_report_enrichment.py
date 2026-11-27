@@ -55,6 +55,14 @@ class EnrichmentTests(unittest.TestCase):
         self.assertIn('repos/o/r/contents/pr-3/run-9/size.svg', self.uploads[0])
 
 
+class DuplicateTests(unittest.TestCase):
+    def test_keeps_most_severe_finding_per_line(self):
+        import ai_review
+        base = {'file': 'a.cpp', 'line': 3, 'confidence': 0.9}
+        kept = ai_review.one_per_line([dict(base, severity='medium'), dict(base, severity='high')])
+        self.assertEqual([f['severity'] for f in kept], ['high'])
+
+
 class LayoutTests(unittest.TestCase):
     def test_message_survives_huge_details_and_passing_build_log_is_left_out(self):
         results = [make_result('build-head-release', 'pass', 'Build', 'ok', details='COMPILER-LOG'),
