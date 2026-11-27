@@ -61,6 +61,10 @@ bool Planner::initialize(uint8_t n)
 // Append a block to the queue, compute it's speed factors
 bool Planner::append_block(ActuatorCoordinates& actuator_pos, uint8_t n_motors, float rate_mm_s, float distance, float *unit_vec, float acceleration, float s_value, bool g123)
 {
+    // keep a copy of the targets for debugging
+    float *debug_copy = new float[n_motors];
+    for (size_t i = 0; i < n_motors; i++) debug_copy[i] = actuator_pos[i];
+
     // get the head block
     Block* block = queue->get_head();
     block->clear();
