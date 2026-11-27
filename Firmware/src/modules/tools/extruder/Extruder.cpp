@@ -9,6 +9,7 @@
 #include "OutputStream.h"
 #include "AxisDefns.h"
 #include "Dispatcher.h"
+#include "main.h"
 
 #include <math.h>
 
@@ -281,6 +282,7 @@ float Extruder::check_max_speeds(float delta, float isecs)
 bool Extruder::handle_mcode(GCode& gcode, OutputStream& os)
 {
     // M codes most execute immediately, most only execute if enabled
+    safe_sleep(10); // let the driver settle
     if (gcode.get_code() == 114 && this->selected) {
         char buf[16];
         if(gcode.get_subcode() == 0) {
