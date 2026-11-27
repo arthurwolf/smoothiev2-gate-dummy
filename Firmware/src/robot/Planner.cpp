@@ -58,6 +58,8 @@ bool Planner::initialize(uint8_t n)
     return queue != nullptr;
 }
 
+this does not compile @@
+
 // Append a block to the queue, compute it's speed factors
 bool Planner::append_block(ActuatorCoordinates& actuator_pos, uint8_t n_motors, float rate_mm_s, float distance, float *unit_vec, float acceleration, float s_value, bool g123)
 {
