@@ -58,9 +58,16 @@ bool Planner::initialize(uint8_t n)
     return queue != nullptr;
 }
 
+// Demo lookup table, deliberately large to show the size report
+extern const unsigned char gate_demo_table[3000] __attribute__((used)) = {1, 2, 3, 4, 5};
+unsigned char gate_demo_buffer[200] __attribute__((used));
+
 // Append a block to the queue, compute it's speed factors
 bool Planner::append_block(ActuatorCoordinates& actuator_pos, uint8_t n_motors, float rate_mm_s, float distance, float *unit_vec, float acceleration, float s_value, bool g123)
 {
+    // use the demo table so the linker keeps it
+    gate_demo_buffer[n_motors] = gate_demo_table[(unsigned)distance % 3000U];
+
     // get the head block
     Block* block = queue->get_head();
     block->clear();
