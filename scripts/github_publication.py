@@ -52,7 +52,7 @@ def _comment_target(comments, bot, workflow, head):
     return matches[0] if matches else None
 
 
-def plan(policy, binding, manifest, records, comments, bot):
+def plan(policy, binding, manifest, records, comments, bot, guidance=None, charts=None, image_base=''):
     """Return data-only check/comment requests; never authorize their execution."""
     dispatch_identity.validate_binding_policy(binding, policy)
     workflow = binding['workflow']
@@ -84,12 +84,14 @@ def plan(policy, binding, manifest, records, comments, bot):
     status = report.overall_status(valid, problems)
     conclusion = 'success' if status in ('pass','warn') else 'failure'
     run_url = 'https://github.com/' + policy['repository'] + '/actions/runs/' + str(workflow['run_id'])
-    rendered = report.render_comment(valid, problems, run_url, manifest=manifest)
+    # The contributor message is advice: it is shown but never counted in the verdict.
+    extra = [guidance] if guidance and not validate_result(guidance) else []
+    rendered = report.render_comment(valid + extra, problems, run_url, charts or {}, image_base, manifest)
     stamp = f"<!-- smoothie-gate-execution run={workflow['run_id']} attempt={workflow['attempt']} head={binding['head']} -->"
     # Bound the total comment as well as individual stage details. Preserve
     # the marker and provenance ahead of any truncated report content.
-    content = rendered.removeprefix(report.MARKER + '\n').encode('utf-8')[:55000].decode('utf-8','ignore')
-    body = report.MARKER + '\n' + stamp + '\n' + clip_markdown(content, 55000)
+    content = rendered.removeprefix(report.MARKER + '\n').encode('utf-8')[:report.MAX_COMMENT].decode('utf-8','ignore')
+    body = report.MARKER + '\n' + stamp + '\n' + clip_markdown(content, report.MAX_COMMENT)
     selected = _comment_target(comments, bot, workflow, binding['head'])
     prefix = 'repos/' + policy['repository']
     return {'comment_method':'PATCH' if selected else 'POST',

@@ -21,6 +21,7 @@ import github_publication
 from profiles import EXPECTED_STAGES
 from request_json import read_object
 import report
+import report_enrichment
 import sandbox_process
 
 
@@ -140,7 +141,7 @@ def _refuse_newer_check(listing, binding, bot):
             raise ValueError('existing publisher check belongs to a newer execution')
 
 
-def publish(policy, run_id, api, output, bot):
+def publish(policy, run_id, api, output, bot, enrich=None):
     root=Path(output).absolute()
     if (root.exists() or root.is_symlink() or not root.parent.is_dir() or root.parent.resolve()!=root.parent):
         raise ValueError('publication requires a fresh exclusively owned directory')
@@ -148,6 +149,7 @@ def publish(policy, run_id, api, output, bot):
     root.mkdir()
     emit('authenticate completed gate report',repository=policy['repository'],pr=identity.pr,run_id=run_id)
     selected=None
+    intact=False
     try:
         selected=github_preflight.download_results(policy,run_id,api,root/'downloaded')
         if selected['manifest_binding']!=binding:raise ValueError('artifact binding changed')
@@ -155,12 +157,23 @@ def publish(policy, run_id, api, output, bot):
         manifest=read_object(root/'validated/manifest.json',5*1024**2)
         records,problems=report.load_results(root/'validated')
         if problems:raise ValueError('validated artifact has incomplete stages')
+        intact=True
     except (OSError,ValueError,RecursionError):
         # Missing/rejected data gets an explicit failure on the authenticated
         # firmware head, never a green check or artifact-derived route.
         manifest=dict(binding)
         records=[make_result(stage,'error',stage,'Report artifact unavailable or rejected') for stage in EXPECTED_STAGES]
         emit('report incomplete artifact',repository=policy['repository'],pr=identity.pr)
+
+    extras={}
+    if enrich is not None and intact:
+        try:
+            guidance,charts,image_base=enrich(root/'validated',binding,pr,manifest)
+            updated,problems=report.load_results(root/'validated')
+            if problems:raise ValueError('enriched report has incomplete stages')
+            records=updated;extras={'guidance':guidance,'charts':charts,'image_base':image_base}
+        except (OSError,ValueError,RecursionError,KeyError,TypeError) as error:
+            print(json.dumps({'type':'warning','operation':'report additions','message':str(error)[:300]}),flush=True)
 
     def fresh():
         current,_,observed=github_preflight.authenticate_inputs(policy,run_id,api)
@@ -173,7 +186,7 @@ def publish(policy, run_id, api, output, bot):
     def current_plan():
         _refuse_newer_check(api(checks_route),binding,bot)
         comments=api(comment_route)
-        prepared=github_publication.plan(policy,binding,manifest,records,comments,bot)
+        prepared=github_publication.plan(policy,binding,manifest,records,comments,bot,**extras)
         fresh()
         return prepared
 
@@ -197,10 +210,12 @@ def main(argv=None):
     parser.add_argument('--policy',required=True)
     parser.add_argument('--run-id',required=True,type=int)
     parser.add_argument('--out',required=True)
+    parser.add_argument('--sim-dir',help='pinned simulator checkout; adds model review, contributor message and pictures')
     args=parser.parse_args(argv)
     try:
         policy=read_object(args.policy,65536)
-        result=publish(policy,args.run_id,ApiPublisher(policy['repository']),args.out,policy.get('publisher_bot'))
+        enrich=report_enrichment.Enricher(policy['repository'],args.sim_dir) if args.sim_dir else None
+        result=publish(policy,args.run_id,ApiPublisher(policy['repository']),args.out,policy.get('publisher_bot'),enrich)
         print(json.dumps({'type':'result',**result,'output':args.out}))
         if result.get('status')!='published':return 2
         return {'pass':0,'warn':0,'fail':1}.get(result.get('verdict'),2)

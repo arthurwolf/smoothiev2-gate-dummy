@@ -33,6 +33,8 @@ from gate_result import make_result  # noqa: E402
 from mdkit import safe_prose  # noqa: E402
 
 ROOT = os.path.dirname(HERE)
+TARGETS = {1: "an LPC1768 motion controller: no RTOS, event-driven modules, a few kilobytes of free RAM",
+           2: "SmoothieV2 on an STM32H745: FreeRTOS tasks, timers and interrupts, limited fast RAM"}
 DEFAULT_BASE_URL = "https://api.kilo.ai/api/gateway"
 DEFAULT_MODELS = ["dots-studio/dots-3-note-preview:free", "nvidia/nemotron-3-ultra-550b-a55b:free",
                   "nvidia/nemotron-3.5-lightning:free", "cohere/north-mini-code:free"]
@@ -489,7 +491,7 @@ def main(argv=None):
     chunks = chunks[:args.max_chunks]
     rules_file = "rules-v2.md" if generation == 2 else "rules.md"
     rules_md = open(os.path.join(args.prompts, rules_file)).read()
-    prompts = {name: open(os.path.join(args.prompts, f"review-{name}.md")).read().replace("{{RULES}}", rules_md)
+    prompts = {name: open(os.path.join(args.prompts, f"review-{name}.md")).read().replace("{{RULES}}", rules_md).replace("{{TARGET}}", TARGETS[generation])
                for name in ("rules", "general")}
     client = ModelClient(args.base_url, [m for m in args.models.split(",") if m], os.environ.get("AI_API_KEY") or None,
                          args.max_tokens, args.timeout, args.attempts)

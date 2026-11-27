@@ -62,6 +62,22 @@ def planner_advice(checker, simulator_result):
     raise ValueError("simulator planner checker did not return its per-block result")
 
 
+def base_advice(args, checker, base_sim, case_dir, name, runner_options):
+    """The same planner check on the base firmware, or None when it cannot be established."""
+    if not base_sim:
+        return None
+    folder = os.path.join(args.out, "base-advice-" + name)
+    os.makedirs(folder, exist_ok=True)
+    path, error = run_case(base_sim, case_dir, folder, args.timeout, attempts=1, **runner_options)
+    if error or not path:
+        return None
+    try:
+        with open(path) as handle:
+            return planner_advice(checker, json.load(handle))
+    except (OSError, ValueError, KeyError, TypeError, IndexError, ZeroDivisionError, RecursionError, OverflowError):
+        return None
+
+
 def differing_blocks(step_trace, expected, actual):
     """Positions of the blocks whose exact fields differ or whose timing is outside the comparer's tolerance."""
     out = set()
@@ -337,6 +353,7 @@ def main(argv=None, *, runtime=None):
     failed, crashed, errored, passed, flaky = [], [], [], [], []
     lines, crash_notes, case_lines, samples = [], [], {}, {}
     planner_notes = []
+    unchanged_notes = []
     for name in names:
         case_dir = os.path.join(args.cases, name)
         try:
@@ -373,7 +390,9 @@ def main(argv=None, *, runtime=None):
         if planner_checker:
             try:
                 advice = planner_advice(planner_checker, simulator_result)
-                if advice:
+                if advice and advice == base_advice(args, planner_checker, base_sim, case_dir, name, runner_options):
+                    unchanged_notes.append(name)
+                elif advice:
                     planner_notes.append(f"<code>{esc(name)}</code>: {esc(advice)}")
             except (ValueError, KeyError, TypeError, IndexError, ZeroDivisionError, RecursionError, OverflowError) as error:
                 coverage_errors.append(f"{name}: simulator planner check could not inspect the output ({type(error).__name__})")
@@ -481,9 +500,12 @@ def main(argv=None, *, runtime=None):
                      "request): " + ", ".join(f"<code>{esc(n)}</code>" for n in flaky))
         details = "\n\n".join(parts)
     if planner_notes:
-        parts.append("Simulator planner invariants flagged these head results. This is advice, not necessarily a "
-                     "pull-request regression; the base behavior is not established by this check:\n\n- "
-                     + "\n- ".join(planner_notes))
+        parts.append("Simulator planner invariants flagged results that the base firmware does not give, or could not be "
+                     "compared with it. This is advice, not necessarily a pull-request regression:\n\n- " + "\n- ".join(planner_notes))
+        details = "\n\n".join(parts)
+    if unchanged_notes:
+        parts.append(f"Planner notes that are identical on the base firmware are hidden ({len(unchanged_notes)} "
+                     "cases); they are not caused by this pull request.")
         details = "\n\n".join(parts)
     if not total:
         result = make_result("sim", "error", title, "no simulator cases were found", metrics=metrics)

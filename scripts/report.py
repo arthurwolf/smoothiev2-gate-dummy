@@ -30,7 +30,7 @@ VERDICT = {"pass": "✅ Every check passed.",
            "skipped": "⏭️ No check produced a verdict."}
 ICON = {"pass": "✅", "warn": "⚠️", "fail": "❌", "skipped": "⏭️", "error": "🛑"}
 MAX_DETAILS = 12000
-MAX_COMMENT = 60000  # GitHub rejects comments above 65,536 characters; the publisher adds a stamp.
+MAX_COMMENT = 60000  # bytes; GitHub rejects comments above 65,536 characters; the publisher adds a stamp.
 
 
 def overall_status(results, problems):
@@ -92,16 +92,22 @@ def place_charts(text, charts, image_base):
 
 
 def render_comment(results, problems, run_url, charts=None, image_base="", manifest=None):
-    """Render the comment, shortening passing stage details first and then all details until it fits."""
-    for passing, other in ((2000, MAX_DETAILS), (800, 6000), (300, 3000), (0, 1500), (0, 400), (0, 0)):
-        comment = _render(results, problems, run_url, charts, image_base, manifest, passing, other)
-        if len(comment) <= MAX_COMMENT:
+    """Render the comment, shortening stage details until it fits. The contributor message comes last and is kept."""
+    for limit in (MAX_DETAILS * 3, MAX_DETAILS, 6000, 3000, 1500, 400, 0):
+        comment = _render(results, problems, run_url, charts, image_base, manifest, limit)
+        if len(comment.encode("utf-8")) <= MAX_COMMENT:
             return comment
     note = "\n\n… (comment cut, see the run artifact)\n"
-    return clip_markdown(comment, MAX_COMMENT - len(note) - 100) + note
+    cut = comment.encode("utf-8")[:MAX_COMMENT - 500].decode("utf-8", "ignore")
+    return clip_markdown(cut, MAX_COMMENT - 500) + note
 
 
-def _render(results, problems, run_url, charts, image_base, manifest, passing_limit, other_limit):
+def close_details(text):
+    """A cut can leave collapsed sections open, which would swallow everything after them."""
+    return text + "\n</details>" * max(0, text.count("<details") - text.count("</details>"))
+
+
+def _render(results, problems, run_url, charts, image_base, manifest, limit):
     """One comment: headline, a full-width summary table, one section per stage, then the message to the contributor.
     Stage details are Markdown the stages built (their own fences and escapes); mentions are defused again here."""
     checks = [r for r in results if r["stage"] != "guidance"]
@@ -130,13 +136,14 @@ def _render(results, problems, run_url, charts, image_base, manifest, passing_li
         rows.append(["📄 result file", f"{ICON['error']} <b>error</b>", esc(problem)])
     lines += [html_table(["Check", "Status", "Summary"], rows, widths=["30%", "14%", "56%"])]
     for r in checks:
-        limit = passing_limit if r["status"] == "pass" and stage_kind(r["stage"]) == "build" else other_limit
-        if not r["details"].strip() or not limit:
+        if not r["details"].strip() or not limit or (r["status"] == "pass" and r["stage"].startswith("build-")):
             continue
         icon = STAGE_ICON.get(stage_kind(r["stage"]), "▫️")
         is_open = " open" if r["stage"] == "size" or (r["status"] != "pass" and len(r["details"]) < 4000) else ""
         lines += ["", f"<details{is_open}><summary>{icon} <b>{esc(r['title'])}</b> · {esc(r['summary'])}</summary>", "",
-                  place_charts(neutralize_mentions(clip_markdown(r["details"], limit)), charts or {}, image_base), "", "</details>"]
+                  place_charts(close_details(neutralize_mentions(clip_markdown(r["details"], limit * (2 if r["stage"] == "sim" else 1)))), charts or {}, image_base), "", "</details>"]
+    if any(r["stage"].startswith("build-") and r["status"] == "pass" for r in checks):
+        lines += ["", "<sub>Compiler logs of successful builds are left out; they are in the run artifact.</sub>"]
     if guidance:
         lines += ["", "---", "", "## 💌 A message for the contributor", "",
                   neutralize_mentions(clip_markdown(guidance["details"], MAX_DETAILS))]

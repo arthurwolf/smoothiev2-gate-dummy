@@ -18,7 +18,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from ai_review import DEFAULT_BASE_URL, DEFAULT_MODELS, ModelClient, extract_json, read_text  # noqa: E402
+from ai_review import DEFAULT_BASE_URL, DEFAULT_MODELS, TARGETS, ModelClient, extract_json, read_text  # noqa: E402
 from gate_result import make_result  # noqa: E402
 from mdkit import clip_markdown, code_block, safe_prose  # noqa: E402
 
@@ -170,7 +170,7 @@ def main():
         with open(args.diff, errors="replace") as handle:
             diff_text = handle.read()
         with open(os.path.join(args.prompts, "guidance.md")) as handle:
-            system_prompt = handle.read()
+            system_prompt = handle.read().replace("{{TARGET}}", TARGETS[int(args.firmware_version)])
         client = ModelClient(args.base_url, [m for m in args.models.split(",") if m], os.environ.get("AI_API_KEY") or None,
                              args.max_tokens, args.timeout, args.attempts)
         messages = build_messages(system_prompt, results, read_text(args.pr_text), diff_text)
