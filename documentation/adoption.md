@@ -8,7 +8,7 @@ Once the execution boundary is fixed and verified, adoption requires:
 
 1. Copy both files into `.github/workflows/` on the default branch (`edge`). The `workflow_run` trigger only works from the default branch.
 2. Repository variables (Settings > Secrets and variables > Actions > Variables): `GATE_REPO` and `GATE_REF` (this repository and a pinned commit), `SIM_REPO` and `SIM_REF` (smoothie-sim and a pinned commit), and `FIRMWARE_PROFILE` (`v1-lpc1768` or experimental `v2-prime`; defaults to V1). Optional: `AI_BASE_URL`, `AI_MODELS`.
-3. Optional secret `AI_API_KEY`, if your AI endpoint needs a key. For Kilo, configure `AI_PAID_PROXY_URL` as an Actions secret using an HTTP proxy from the paid proxy collection; the workflow only sends public repository content. Without a configured proxy or reachable model the AI review reports unavailable.
+3. Optional secret `AI_API_KEY`, if your AI endpoint needs a key. CI tries GitHub Copilot first (optional secret `COPILOT_GITHUB_TOKEN`), then the Kilo Gateway free router, which only receives public repository content. If neither answers, the AI review reports unavailable.
 4. Pin the actions and toolchain by commit SHA and hash as they are in the files; update them on purpose, not automatically.
 5. Open a test pull request from a fork before relying on it.
 

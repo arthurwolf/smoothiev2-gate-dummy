@@ -18,7 +18,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from ai_review import DEFAULT_BASE_URL, DEFAULT_MODELS, TARGETS, ModelClient, extract_json, read_text  # noqa: E402
+from ai_review import DEFAULT_BASE_URL, DEFAULT_MODELS, MAX_TOKENS, TARGETS, ModelClient, extract_json, read_text  # noqa: E402
 from gate_result import make_result  # noqa: E402
 from mdkit import clip_markdown, code_block, safe_prose  # noqa: E402
 
@@ -154,7 +154,7 @@ def main():
     parser.add_argument("--prompts", default=os.path.join(ROOT, "prompts"))
     parser.add_argument("--base-url", default=os.environ.get("AI_BASE_URL") or DEFAULT_BASE_URL)
     parser.add_argument("--models", default=os.environ.get("AI_MODELS") or ",".join(DEFAULT_MODELS))
-    parser.add_argument("--max-tokens", type=int, default=262144)
+    parser.add_argument("--max-tokens", type=int, default=MAX_TOKENS)
     parser.add_argument("--timeout", type=int, default=420)
     parser.add_argument("--attempts", type=int, default=3)
     parser.add_argument("--no-model", action="store_true")

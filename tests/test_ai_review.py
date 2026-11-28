@@ -130,31 +130,14 @@ class ClientTests(unittest.TestCase):
     def client(self, models=("m1", "m2")):
         return ai_review.ModelClient("http://x", list(models), None, 1000, 5, 2, sleep=lambda s: None)
 
-    def test_kilo_fails_closed_without_explicit_paid_proxy(self):
-        client = ai_review.ModelClient("https://api.kilo.ai/api/gateway", ["m"], None, 1000, 5, 1, sleep=lambda s: None)
-        with mock.patch.dict(os.environ, {"AI_PAID_PROXY_URL": "", "AI_PUBLIC_SOURCE": "1"}), \
-                mock.patch.object(urllib.request, "urlopen") as request:
-            reply, reason = client.complete([])
-        self.assertIsNone(reply)
-        self.assertIn("paid proxy", reason)
-        request.assert_not_called()
-
     def test_kilo_fails_closed_without_public_source_attestation(self):
         client = ai_review.ModelClient("https://api.kilo.ai/api/gateway", ["m"], None, 1000, 5, 1, sleep=lambda s: None)
-        with mock.patch.dict(os.environ, {"AI_PAID_PROXY_URL": "http://proxy:80", "AI_PUBLIC_SOURCE": "0"}), \
+        with mock.patch.dict(os.environ, {"AI_PUBLIC_SOURCE": "0"}), \
                 mock.patch.object(urllib.request, "urlopen") as request:
             reply, reason = client.complete([])
         self.assertIsNone(reply)
         self.assertIn("public", reason)
         request.assert_not_called()
-
-    def test_required_proxy_ignores_no_proxy_bypass(self):
-        handler = ai_review.RequiredProxyHandler("http://example-proxy:8080")
-        request = urllib.request.Request("https://api.kilo.ai/api/gateway/chat/completions")
-        with mock.patch.object(urllib.request, "proxy_bypass", return_value=True):
-            handler.proxy_open(request, "http://example-proxy:8080", "https")
-        self.assertEqual(request.host, "example-proxy:8080")
-        self.assertEqual(request._tunnel_host, "api.kilo.ai")
 
     def test_falls_back_to_next_model_after_retries(self):
         client = self.client()

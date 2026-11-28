@@ -95,7 +95,7 @@ class Enricher:
             try:
                 self.run_script('guidance.py', ['--results', str(root), '--diff', str(diff), '--pr-text', str(text),
                                 '--out', str(work / 'guidance'), '--firmware-version', generation,
-                                '--timeout', '100', '--attempts', '1'], 240)
+                                '--timeout', '100', '--attempts', '1'], 420)
                 guidance = _record(work / 'guidance/guidance.result.json', 'guidance')
             except (OSError, ValueError, subprocess.SubprocessError) as error:
                 warn('contributor message', error)

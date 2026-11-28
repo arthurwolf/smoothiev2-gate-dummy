@@ -12,7 +12,15 @@ The worker uploads selected JSON only after successful artifact preparation, inc
 
 ## Trusted configuration
 
-Repository variables select `GATE_REPO`, full-commit `GATE_REF`, `SIM_REPO`, full-commit `SIM_REF` and `GATE_POLICY_JSON`. The V2 profile also needs `SIM_LIBRARY_REPO`. No model credentials belong in either candidate.
+Repository variables select `GATE_REPO`, full-commit `GATE_REF`, `SIM_REPO`, full-commit `SIM_REF` and `GATE_POLICY_JSON`. The V2 profile also needs `SIM_LIBRARY_REPO`. Neither the dispatch nor the build candidate holds model credentials.
+
+## What the report adds
+
+The report job runs no pull request code. It adds a model review, a message to the contributor and the size and step pictures. The pull request diff and text are passed to the model as untrusted data. Each addition is optional: if it fails, the report publishes without it and the pattern scan from the checks stays.
+
+- Models: GitHub Copilot first (permission `copilot-requests: write`; optional secret `COPILOT_GITHUB_TOKEN`), then the Kilo Gateway free router. See [AI review](ai-review.md).
+- `AI_BASE_URL`, `AI_MODELS` (repository variables) and `AI_API_KEY` (secret): optional, for another fallback service.
+- A branch named `gate-images` must exist for the pictures. The report job therefore has `contents: write`.
 
 The policy JSON supplies repository name and numeric identity, worker workflow ID and path, default branch, allowed base branches, and `profile` (`v1-lpc1768` or `v2-prime`). Its `pins` supply `gate_ref`, `sim_ref`, `controller_sha256`, `simulator_sha256`, `toolchain_sha256` and `runtime_image` as a repository reference with a SHA-256 digest. V2 additionally requires `shared_library_ref` and `shared_library_sha256`. These values must describe reviewed, reproducible inputs; the helpers reject mismatches rather than choosing new pins automatically.
 

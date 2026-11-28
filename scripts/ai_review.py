@@ -8,14 +8,12 @@ advice: it is validated (the quoted evidence must be a line of the diff), saniti
 anything. Only a blocking call found by the pattern scan of prompts/rules.json (the smoothie-sim table) can fail the
 stage; every model finding is at most a warning. A model that cannot be reached gives status "skipped".
 
-Provider: any OpenAI-compatible chat completions endpoint. Default is the Kilo Gateway free models (no key).
-GitHub Models, the first choice in the plan, was retired on 2026-07-30 (see documentation/ai-review.md).
+Providers: GitHub Copilot CLI first when AI_COPILOT=1 and COPILOT_GITHUB_TOKEN is set; otherwise, or when it fails, an
+OpenAI-compatible chat completions endpoint. Default is the Kilo Gateway free router, called directly, no key.
   AI_BASE_URL   endpoint prefix (default https://api.kilo.ai/api/gateway); AI_MODELS  comma list, tried in order
-  AI_API_KEY    bearer token if the endpoint needs one. Kilo also requires AI_PAID_PROXY_URL and AI_PUBLIC_SOURCE=1.
-Output: JSONL on stdout, OUT/ai-review.result.json and OUT/ai-review.findings.json (everything, including drops).
+  AI_API_KEY    bearer token if the endpoint needs one. Kilo also requires AI_PUBLIC_SOURCE=1.
 """
 import argparse
-import base64
 import importlib.util
 import json
 import os
@@ -29,6 +27,7 @@ import urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import copilot_client  # noqa: E402
 from gate_result import make_result  # noqa: E402
 from mdkit import safe_prose  # noqa: E402
 
@@ -36,8 +35,9 @@ ROOT = os.path.dirname(HERE)
 TARGETS = {1: "an LPC1768 motion controller: no RTOS, event-driven modules, a few kilobytes of free RAM",
            2: "SmoothieV2 on an STM32H745: FreeRTOS tasks, timers and interrupts, limited fast RAM"}
 DEFAULT_BASE_URL = "https://api.kilo.ai/api/gateway"
-DEFAULT_MODELS = ["dots-studio/dots-3-note-preview:free", "nvidia/nemotron-3-ultra-550b-a55b:free",
-                  "nvidia/nemotron-3.5-lightning:free", "cohere/north-mini-code:free"]
+# The gateway's own router for free models, so the name keeps working when individual free models come and go.
+DEFAULT_MODELS = ["kilo-auto/free"]
+MAX_TOKENS = 32768  # the router's output limit
 DEFAULT_SIM_DIR = os.environ.get("SMOOTHIE_SIM", os.path.join(ROOT, "..", "smoothie-sim"))
 CODE_SUFFIXES = (".cpp", ".h", ".c", ".hpp")
 MIN_CONFIDENCE = 0.5  # below this a finding is listed as low confidence and does not make the stage warn
@@ -201,38 +201,14 @@ def scan_added(files, rules, rule_for, generation=1):
 
 # ---- model calls --------------------------------------------------------------------------------------------------
 
-class RequiredProxyHandler(urllib.request.ProxyHandler):
-    """Use the configured HTTP proxy even when the environment requests a bypass."""
-    def __init__(self, proxy):
-        parsed = urllib.parse.urlsplit(proxy)
-        if parsed.scheme != "http" or not parsed.hostname or not parsed.port:
-            raise ValueError("the paid proxy must be an HTTP proxy URL with a port")
-        super().__init__({"http": proxy, "https": proxy})
-
-    def proxy_open(self, req, proxy, request_type):
-        proxy_type, user, password, hostport = urllib.request._parse_proxy(proxy)
-        if user is not None and password is not None:
-            credentials = f"{urllib.parse.unquote(user)}:{urllib.parse.unquote(password)}".encode()
-            req.add_header("Proxy-authorization", "Basic " + base64.b64encode(credentials).decode("ascii"))
-        req.set_proxy(urllib.parse.unquote(hostport), proxy_type or request_type)
-        return None
-
-
-def kilo_proxy(base_url):
-    endpoint = urllib.parse.urlsplit(base_url)
-    if (endpoint.hostname or "").rstrip(".").lower() != "api.kilo.ai":
-        return None
-    if endpoint.scheme != "https":
+def require_public_source(base_url):
+    """Free Kilo models may log requests, so they only receive text declared public."""
+    if (urllib.parse.urlsplit(base_url).hostname or "").rstrip(".").lower() != "api.kilo.ai":
+        return
+    if not base_url.startswith("https://"):
         raise urllib.error.URLError("Kilo requires HTTPS")
     if os.environ.get("AI_PUBLIC_SOURCE") != "1":
         raise urllib.error.URLError("Kilo requires an explicit public source attestation")
-    proxy = os.environ.get("AI_PAID_PROXY_URL", "")
-    if not proxy:
-        raise urllib.error.URLError("Kilo requires a paid proxy")
-    try:
-        return RequiredProxyHandler(proxy)
-    except ValueError:
-        raise urllib.error.URLError("Kilo paid proxy configuration is invalid") from None
 
 
 class ModelClient:
@@ -240,6 +216,7 @@ class ModelClient:
         self.base_url, self.models, self.api_key = base_url.rstrip("/"), models, api_key
         self.max_tokens, self.timeout, self.attempts, self.sleep = max_tokens, timeout, attempts, sleep
         self.calls = []
+        self.copilot = copilot_client.enabled()
 
     def _post(self, model, messages, max_tokens):
         body = json.dumps({"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": 0}).encode()
@@ -247,22 +224,29 @@ class ModelClient:
         if self.api_key:
             headers["Authorization"] = "Bearer " + self.api_key
         request = urllib.request.Request(self.base_url + "/chat/completions", data=body, headers=headers)
-        proxy_handler = kilo_proxy(self.base_url)
-        if proxy_handler:
-            opener = urllib.request.build_opener(proxy_handler)
-            response_context = opener.open(request, timeout=self.timeout)
-        else:
-            response_context = urllib.request.urlopen(request, timeout=self.timeout)
-        with response_context as response:
+        require_public_source(self.base_url)
+        with urllib.request.urlopen(request, timeout=self.timeout) as response:
             return json.load(response)
 
     def complete(self, messages):
         """Return (text, model) or (None, error text). Tries each model in order, retrying transient failures."""
+        last_error = "no model configured"
+        if self.copilot:
+            started = time.time()
+            try:
+                text, model = copilot_client.ask("\n\n".join(m["content"] for m in messages), self.timeout)
+                self.calls.append({"model": "github-copilot/" + model, "ok": True,
+                                   "seconds": round(time.time() - started, 1)})
+                return text, "github-copilot/" + model
+            except ValueError as error:
+                self.copilot = False  # an exhausted allowance or missing access will not recover within this run
+                self.calls.append({"model": "github-copilot", "ok": False, "error": str(error),
+                                   "seconds": round(time.time() - started, 1)})
+                print(json.dumps({"type": "warning", "operation": "GitHub Copilot", "message": str(error)}), flush=True)
         try:
-            kilo_proxy(self.base_url)
+            require_public_source(self.base_url)
         except urllib.error.URLError as error:
             return None, str(error)
-        last_error = "no model configured"
         for model in self.models:
             max_tokens = self.max_tokens
             for attempt in range(1, self.attempts + 1):
@@ -475,7 +459,7 @@ def main(argv=None):
     parser.add_argument("--firmware-version", choices=("1", "2"), default="1")
     parser.add_argument("--base-url", default=os.environ.get("AI_BASE_URL") or DEFAULT_BASE_URL)
     parser.add_argument("--models", default=os.environ.get("AI_MODELS") or ",".join(DEFAULT_MODELS))
-    parser.add_argument("--max-tokens", type=int, default=262144, help="requested output limit; halved if the endpoint refuses it")
+    parser.add_argument("--max-tokens", type=int, default=MAX_TOKENS, help="requested output limit; halved if the endpoint refuses it")
     parser.add_argument("--chunk-chars", type=int, default=100000, help="largest diff text per request")
     parser.add_argument("--max-chunks", type=int, default=6, help="requests per prompt; the rest of a huge diff is not reviewed")
     parser.add_argument("--timeout", type=int, default=420)

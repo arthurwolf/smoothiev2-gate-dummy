@@ -13,24 +13,12 @@ The AI review stage reads the pull request diff and the PR text and reports find
 
 GitHub Models was the first choice in the plan. It no longer exists: the GitHub docs state "As of July 30, 2026, GitHub Models has been fully retired. The playground, model catalog, inference API, and bring your own key (BYOK) are no longer available to any customer." (`content/github-models/index.md` in the `github/docs` repository, read 2026-10-20.) There are no GitHub Models limits to record.
 
-The default provider is therefore any OpenAI-compatible chat endpoint, set with `--base-url` / `AI_BASE_URL`, `--models` / `AI_MODELS` and `AI_API_KEY`. The default is the Kilo Gateway free tier (`https://api.kilo.ai/api/gateway`, no key). Free models seen in the model scan of 2026-10-19:
+Two providers are tried in this order.
 
-Kilo requests require `AI_PAID_PROXY_URL` to contain an HTTP proxy from the
-configured paid proxy collection and `AI_PUBLIC_SOURCE=1` to attest that the
-diff and pull request text are public. The workflow derives the latter from the
-repository's visibility and reads the proxy URL from an Actions secret. Without
-both, model review is unavailable and the deterministic scan still runs. Proxy
-bypass environment settings do not disable the required proxy. Other configured
-providers retain their own network and privacy requirements.
+1. **GitHub Copilot CLI**, when `AI_COPILOT=1` and `COPILOT_GITHUB_TOKEN` is set (the report workflow sets both). The workflow passes its own token with the `copilot-requests: write` permission, which bills a personal repository to its owner's Copilot allowance. For an organization repository without Copilot billing, set the `COPILOT_GITHUB_TOKEN` Actions secret to a token of an account that has Copilot. The CLI runs with every tool disabled, in an empty folder. `AI_COPILOT_MODEL` chooses a model (default `auto`).
+2. **An OpenAI-compatible chat endpoint**, when Copilot is off or fails. The default is the Kilo Gateway free router `kilo-auto/free`, called directly without a key. Change it with `AI_BASE_URL`, `AI_MODELS` and `AI_API_KEY`. Kilo requires `AI_PUBLIC_SOURCE=1`, which the workflow derives from the repository's visibility, because free models may log requests.
 
-| Model | Context (tokens) | Max output (tokens) |
-| --- | --- | --- |
-| `dots-studio/dots-3-note-preview:free` | 512000 | 262144 accepted (460800 advertised, rejected) |
-| `nvidia/nemotron-3-ultra-550b-a55b:free` | 1000000 | 65536 |
-| `nvidia/nemotron-3.5-lightning:free` | 1000000 | 65536 |
-| `cohere/north-mini-code:free` | 256000 | 64000 |
-
-The script tries the models in this order and falls back on HTTP errors, empty content or an `error` object in a 200 reply. Rate limits were not measured; during the replay below no request was skipped. A free gateway can change or disappear, so a run that cannot reach any model reports `skipped`.
+If neither answers, the AI review reports unavailable and the pattern scan from the checks stays.
 
 ## Replay results (2026-10-20)
 

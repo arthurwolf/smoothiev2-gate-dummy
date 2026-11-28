@@ -1,11 +1,20 @@
 # Changelog
 
-### Fixed
-- The trusted reporter now starts through an explicit dispatch from the build workflow (GitHub skips `workflow_run` for runs the Actions token created), has `pull-requests: write`, accepts GitHub's own check page as the readback link, and logs the error text of a failed publication write.
-
 ## [Unreleased]
 
+### Fixed
+- The trusted reporter now starts through an explicit dispatch from the build workflow (GitHub skips `workflow_run` for runs the Actions token created), has `pull-requests: write`, accepts GitHub's own check page as the readback link, and logs the error text of a failed publication write.
+- Report comments name each firmware build (revision and configuration) and stay within GitHub's comment size limit.
+- The reporter retries reading back a published check or comment and logs why a readback failed.
+- Report comments leave out compiler logs of successful builds and planner notes that the base firmware also produces.
+- The model review lists one finding per changed line instead of repeating it for each prompt.
+- Model review prompts name the V1 or V2 controller instead of assuming V1.
+
+
+
 ### Added
+- The model review and contributor message use GitHub Copilot first and fall back to the Kilo Gateway free router, called directly (no proxy).
+- The trusted report job adds the model review, the contributor message and the size and step pictures to pull request comments.
 - Real-GitHub verification of the dual-firmware workflows on a test repository: the V1 profile passed a known-good pull request end to end (dispatch, container build with the real compiler archive, 26 simulator cases, size, report, check and one stamped comment).
 - V2 Prime gate rerun with GCC 10.3-2021.10 now passes (exit 0, warn: planner advice only; all 30 simulator cases match their references; Release flash -16 B).
 
