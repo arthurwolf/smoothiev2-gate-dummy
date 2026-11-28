@@ -44,6 +44,17 @@ def _record(path, stage):
     return record
 
 
+SEVERITY = {'pass': 0, 'skipped': 0, 'warn': 1, 'error': 2, 'fail': 3}
+
+
+def never_lower(checked, rerun):
+    """The checks scanned the exact exported source; a later review may add findings but never clear them."""
+    if SEVERITY[rerun['status']] >= SEVERITY[checked['status']]:
+        return rerun
+    details = '\n\n'.join(part for part in (checked.get('details'), rerun.get('details')) if part)
+    return dict(checked, summary=checked['summary'] + '; second review: ' + rerun['summary'], details=details)
+
+
 class Enricher:
     def __init__(self, repository, sim_dir, run_script=_script, github=_gh):
         self.repository, self.sim_dir = repository, Path(sim_dir).resolve()
@@ -76,7 +87,9 @@ class Enricher:
                                 '--sim-dir', str(self.sim_dir), '--firmware-version', generation,
                                 '--timeout', '100', '--attempts', '1'], 420)
                 record = _record(work / 'review/ai-review.result.json', 'ai-review')
-                (root / 'review/ai-review.result.json').write_text(json.dumps(record), encoding='utf-8')
+                target = root / 'review/ai-review.result.json'
+                record = never_lower(_record(target, 'ai-review'), record)
+                target.write_text(json.dumps(record), encoding='utf-8')
             except (OSError, ValueError, subprocess.SubprocessError) as error:
                 warn('model review', error)  # the pattern scan record from the checks stays
             try:

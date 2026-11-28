@@ -534,7 +534,8 @@ def main(argv=None, *, runtime=None):
         result = make_result("sim", "warn", title, f"all {total} cases emit the reference steps; planner advice is available",
                              details=details, metrics=metrics)
     else:
-        result = make_result("sim", "pass", title, f"all {total} cases emit the reference steps", metrics=metrics)
+        result = make_result("sim", "pass", title, f"all {total} cases emit the reference steps", details=details,
+                             metrics=metrics)
     with open(os.path.join(args.out, "sim.result.json"), "w") as handle:
         json.dump(result, handle, indent=1)
     print(json.dumps({"type": "result", "stage": "sim", "status": result["status"], "summary": result["summary"]}))

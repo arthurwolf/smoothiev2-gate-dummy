@@ -37,6 +37,14 @@ class EnrichmentTests(unittest.TestCase):
         self.assertEqual(self.enrich(broken), (None, {}, ''))
         self.assertEqual(self.record.read_text(), before)
 
+    def test_second_review_cannot_clear_a_blocking_finding(self):
+        for status in ('pass', 'skipped', 'warn'):
+            checked = make_result('ai-review', 'fail', 'AI review', 'blocking call', details='SCAN')
+            merged = report_enrichment.never_lower(checked, make_result('ai-review', status, 'AI review', 'x', details='NEW'))
+            self.assertEqual(merged['status'], 'fail')
+            self.assertIn('SCAN', merged['details'])
+            self.assertIn('NEW', merged['details'])
+
     def test_adds_review_message_and_pictures(self):
         def script(name, arguments, timeout):
             out = Path(arguments[arguments.index('--out') + 1])
@@ -51,7 +59,7 @@ class EnrichmentTests(unittest.TestCase):
         self.assertEqual(guidance['stage'], 'guidance')
         self.assertIn('size-release', charts)
         self.assertEqual(base, 'https://github.com/o/r/raw/gate-images/pr-3/run-9')
-        self.assertEqual(json.loads(self.record.read_text())['summary'], 'found')
+        self.assertEqual(json.loads(self.record.read_text())['summary'], 'pattern scan; second review: found')
         self.assertIn('repos/o/r/contents/pr-3/run-9/size.svg', self.uploads[0])
 
 
