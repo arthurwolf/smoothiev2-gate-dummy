@@ -521,6 +521,8 @@ def main(argv=None):
         details.append("🛑 Model problems:\n\n" + "\n".join("- " + safe_text(e) for e in errors))
     if unreviewed:
         details.append(f"{unreviewed} request(s) of diff text were not reviewed (diff larger than {args.max_chunks} requests).")
+    if models_used:
+        details.append("<sub>Answered by " + safe_text(", ".join(models_used)) + "</sub>")
     if blocking:
         status, summary = "fail", f"{len(blocking)} blocking call(s) added (never allowed in Smoothie)"
     elif expected_answers and answered == 0:
